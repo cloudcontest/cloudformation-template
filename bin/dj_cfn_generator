@@ -1,0 +1,69 @@
+#!/usr/bin/env python
+"""
+Usage: dj_cfn_generator [-v] [-f <file>]
+       dj_cfn_generator [-v] -u [--bucket <s3bucket>]
+
+Generate DOMjudge cluster cloudformation template on STDOUT.
+
+Options:
+  -u, --upload                  Upload template to Amazon S3
+  --bucket <s3bucket>           Bucket to use for uploads[default: cloudcontest.org-cf-templates]
+  -f <file>, --file <file>      Save template as <file>
+  -v, --verbose                 Be verbose
+  -h, --help                    Show this help message
+"""
+from __future__ import print_function
+
+import boto3
+import dj_cfn_generator
+import time
+import sys
+
+from docopt import docopt
+
+verbose = False
+
+
+def vprint(*args, **kwargs):
+    global verbose
+    if verbose:
+        print(*args, file=sys.stderr, **kwargs)
+
+
+def upload_s3(json, bucket):
+    # generate a unique filename for it
+    template_name = 'cloudformation-{}.json'.format(time.strftime('%Y%m%d_%H%M%S'))
+
+    # upload the json template to s3
+    s3 = boto3.resource('s3')
+    cf_bucket = s3.Bucket(bucket)
+    cf_bucket.put_object(Key=template_name, Body=json)
+
+    # Also create a file named latest that points to the file we just made
+    cf_bucket.put_object(Key='latest', Body=template_name)
+
+    return template_name
+
+
+def main(args):
+    global verbose
+    verbose = args['--verbose'] or False
+
+    # generate the json template(via some troposphere magic)
+    json = dj_cfn_generator.generate_json()
+
+    if args['--file']:
+        vprint("Writing to file {}".format(args['--file']))
+        with open(args['--file'], 'w') as f:
+            f.write(json)
+    elif args['--upload']:
+        bucket = args['--bucket']
+        vprint("Uploading to S3 bucket {}".format(bucket))
+        filename = upload_s3(json, bucket)
+        vprint("Filename: {}".format(filename))
+    else:
+        print(json)
+
+if __name__ == '__main__':
+    arguments = docopt(__doc__)
+    main(arguments)
